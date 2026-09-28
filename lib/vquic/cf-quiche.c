@@ -537,7 +537,16 @@ static void cf_quiche_process_ev(struct Curl_cfilter *cf,
     cb_ctx.data = data;
     cb_ctx.stream = stream;
     quiche_h3_event_for_each_header(ev, cb_each_header, &cb_ctx);
-    CURL_TRC_CF(data, cf, "[%" PRIu64 "] <- [HEADERS]", stream->id);
+    if(!stream->resp_hds_complete) {
+      /* Each HEADERS frame is a complete header block. Terminate it
+       * like an HTTP/1 response so that interim 1xx responses
+       * are not merged with the final response. */
+      cf_quiche_write_hd(cf, data, stream, "\r\n", 2, FALSE);
+      if(stream->status_code / 100 != 1)
+        stream->resp_hds_complete = TRUE;
+    }
+    CURL_TRC_CF(data, cf, "[%" PRIu64 "] <- [HEADERS], status=%d",
+                stream->id, stream->status_code);
     Curl_multi_mark_dirty(data);
     break;
   }
